@@ -51,7 +51,11 @@
         button:hover { background: #0c0; }
         button:disabled { background: #444; color: #888; cursor: not-allowed; }
 
-        .settings-group { margin: 15px 0; text-align: left; }
+        .settings-group {
+            margin: 15px 0;
+            text-align: left;
+        }
+
         label { display: block; margin-bottom: 5px; font-weight: bold; }
         
         select {
@@ -72,7 +76,12 @@
             border: 1px solid #444;
         }
 
-        input[type=range] { width: 100%; margin-top: 5px; cursor: pointer; }
+        input[type=range] {
+            width: 100%;
+            margin-top: 5px;
+            cursor: pointer;
+        }
+
         .instructions { font-size: 0.9em; color: #aaa; margin-top: 20px; line-height: 1.5; }
     </style>
 </head>
@@ -103,163 +112,279 @@
             <p>1. Click Initialize above.</p>
             <p>2. Press <b>Win + A</b> to open Media Controls.</p>
             <p>3. Press <b>Prev ($|<<$)</b> or <b>Next ($>>|$)</b> to START.</p>
+            <p>4. Press <b>Play/Pause</b> to tune background color.</p>
         </div>
     </div>
 
-    <audio id="silentAudio" loop>
-        <source src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" type="audio/wav">
-    </audio>
+    <audio id="bgMusic" loop src="music.mp3"></audio>
 
     <script>
+        // --- 1. SETUP ---
         const canvas = document.createElement('canvas');
-        canvas.width = 256; canvas.height = 256;
+        canvas.width = 256;
+        canvas.height = 256;
         const ctx = canvas.getContext('2d');
         
         const startBtn = document.getElementById('startBtn');
-        const silentAudio = document.getElementById('silentAudio');
+        const music = document.getElementById('bgMusic');
         const difficultySelect = document.getElementById('difficulty');
         const bgSlider = document.getElementById('bgSlider');
 
+        // Game State Variables
         let gameState = 'MENU'; 
-        let highScore = 0, score = 0, snake = [], food = { x: 0, y: 0 };
-        let dx = 0, dy = 0, inputQueue = [], gameOverTime = 0;
-        let tileCount = 16, gridSize = 16, scoreMultiplier = 1, bgGrayValue = 0, gameSpeed = 1000 / 6;
+        let highScore = 0;
+        let score = 0;
+        let snake = [];
+        let food = { x: 0, y: 0 };
+        let dx = 0; 
+        let dy = 0; 
+        let inputQueue = [];
+        let gameOverTime = 0; // Timestamp for death
+        
+        // Settings
+        let tileCount = 16; 
+        let gridSize = 16;
+        let scoreMultiplier = 1;
+        let bgGrayValue = 0; // 0-255
+        let gameSpeed = 1000 / 6;
 
+        // --- 2. INPUT LISTENERS ---
+        
+        // Reset on difficulty change
         difficultySelect.onchange = () => {
-            if (gameState === 'PLAYING' || gameState === 'GAMEOVER') resetGame();
-            else setDifficulty(); 
+            if (gameState === 'PLAYING' || gameState === 'GAMEOVER') {
+                resetGame();
+            } else {
+                setDifficulty(); 
+            }
         };
 
+        // Real-time Background Update from Slider
         bgSlider.oninput = () => {
             bgGrayValue = parseInt(bgSlider.value);
-            draw(); updateOverlay();
+            draw();
+            updateOverlay();
         };
 
+        // Helper to cycle background from Media Keys
         function cycleBackgroundColor() {
             bgGrayValue = (bgGrayValue + 10);
             if (bgGrayValue > 80) bgGrayValue = 0;
+            
+            // Sync the HTML slider to match
             bgSlider.value = bgGrayValue;
-            draw(); updateOverlay();
+            
+            draw();
+            updateOverlay();
         }
+
+        // --- 3. LOGIC ---
 
         function setDifficulty() {
             const level = difficultySelect.value;
-            if (level === 'casual') { tileCount = 8; scoreMultiplier = 1; gameSpeed = 1000 / 6; }
-            else { tileCount = 16; scoreMultiplier = 2; gameSpeed = 1000 / 8; }
+            if (level === 'casual') {
+                tileCount = 8;
+                scoreMultiplier = 1;
+                gameSpeed = 1000 / 6;
+            } else if (level === 'gamer') {
+                tileCount = 16;
+                scoreMultiplier = 2;
+                gameSpeed = 1000 / 8;
+            }
             gridSize = canvas.width / tileCount;
         }
 
         function resetGame() {
             setDifficulty();
+            
+            // Start in middle
             const mid = Math.floor(tileCount / 2);
             snake = [{x: mid, y: mid}, {x: mid-1, y: mid}, {x: mid-2, y: mid}];
-            score = 0; dx = 1; dy = 0; inputQueue = [];
+            
+            score = 0;
+            dx = 1; dy = 0; 
+            inputQueue = [];
+            
             placeFood();
             gameState = 'PLAYING';
-            draw(); updateOverlay(); 
+            draw();
+            updateOverlay(); 
         }
 
         function placeFood() {
             let valid = false;
-            while (!valid) {
+            let attempts = 0;
+            while (!valid && attempts < 100) {
                 food.x = Math.floor(Math.random() * tileCount);
                 food.y = Math.floor(Math.random() * tileCount);
-                valid = !snake.some(p => p.x === food.x && p.y === food.y);
+                
+                valid = true;
+                for(let part of snake) {
+                    if(part.x === food.x && part.y === food.y) valid = false;
+                }
+                attempts++;
             }
         }
 
         function handleInput(type) {
+            // Safety Delay Check for Game Over
             if (gameState === 'GAMEOVER') {
-                if (Date.now() - gameOverTime < 1500) return;
-                resetGame(); return;
+                const now = Date.now();
+                if (now - gameOverTime < 1500) {
+                    // Block input if less than 1.5 seconds have passed
+                    return;
+                }
+                resetGame();
+                return;
             }
-            if (gameState === 'MENU') { resetGame(); return; }
+
+            // Start game from Menu
+            if (gameState === 'MENU') {
+                resetGame();
+                return;
+            }
+
             if (type === 'left') inputQueue.push('left');
             if (type === 'right') inputQueue.push('right');
         }
 
         function update() {
             if (gameState !== 'PLAYING') return;
+
             if (inputQueue.length > 0) {
                 const turn = inputQueue.shift();
-                const temp = dx;
-                if (turn === 'left') { dx = dy; dy = -temp; }
-                else if (turn === 'right') { dx = -dy; dy = temp; }
+                if (turn === 'left') {
+                    const temp = dx; dx = dy; dy = -temp;
+                } else if (turn === 'right') {
+                    const temp = dx; dx = -dy; dy = temp;
+                }
             }
+
             const head = { x: snake[0].x + dx, y: snake[0].y + dy };
+
+            // Wrap Walls
             if (head.x < 0) head.x = tileCount - 1;
             if (head.x >= tileCount) head.x = 0;
             if (head.y < 0) head.y = tileCount - 1;
             if (head.y >= tileCount) head.y = 0;
-            if (snake.some(p => p.x === head.x && p.y === head.y)) {
-                gameState = 'GAMEOVER'; gameOverTime = Date.now();
-                if (score > highScore) highScore = score;
-                updateOverlay(); return;
+
+            for (let part of snake) {
+                if (part.x === head.x && part.y === head.y) {
+                    gameState = 'GAMEOVER';
+                    gameOverTime = Date.now(); // Record time of death
+                    if (score > highScore) highScore = score;
+                    updateOverlay();
+                    return;
+                }
             }
+
             snake.unshift(head);
+
             if (head.x === food.x && head.y === food.y) {
-                score += (1 * scoreMultiplier); placeFood();
-            } else { snake.pop(); }
+                score += (1 * scoreMultiplier);
+                placeFood();
+            } else {
+                snake.pop();
+            }
         }
 
         function draw() {
+            // 1. Draw Background (Using Slider Value)
             ctx.fillStyle = 'black'; 
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = `rgb(${bgGrayValue}, ${bgGrayValue}, ${bgGrayValue})`;
+            
+            const gray = bgGrayValue;
+            ctx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
             ctx.fillRect(4, 4, canvas.width - 8, canvas.height - 8);
 
-            if (gameState === 'MENU') drawText("READY?", "START KEY");
-            else if (gameState === 'GAMEOVER') {
-                if (Date.now() - gameOverTime < 1500) drawText("GAME OVER", "WAIT...");
-                else drawText("GAME OVER", `SCORE: ${score}`);
-            } else {
-                ctx.fillStyle = '#ff3333';
-                ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize - 2, gridSize - 2);
-                snake.forEach((p, i) => {
-                    ctx.fillStyle = (i === 0) ? '#ccffcc' : '#00ff00';
-                    ctx.fillRect(p.x * gridSize, p.y * gridSize, gridSize - 2, gridSize - 2);
-                });
+            // 2. State Drawing
+            if (gameState === 'MENU') {
+                drawText("PRESS KEY", "TO START");
+                return;
+            }
+
+            if (gameState === 'GAMEOVER') {
+                // Show "WAIT..." if in the safety lockout period
+                const now = Date.now();
+                if (now - gameOverTime < 1000) {
+                    drawText("GAME OVER", "WAIT...");
+                } else {
+                    drawText("GAME OVER", `FINAL: ${score}`);
+                }
+                return;
+            }
+
+            // 3. Draw Game Elements
+            ctx.fillStyle = '#ff3333';
+            ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize - 2, gridSize - 2);
+
+            for (let i = 0; i < snake.length; i++) {
+                ctx.fillStyle = (i === 0) ? '#ccffcc' : '#00ff00';
+                ctx.fillRect(snake[i].x * gridSize, snake[i].y * gridSize, gridSize - 2, gridSize - 2);
             }
         }
 
-        function drawText(l1, l2) {
-            ctx.fillStyle = '#0f0'; ctx.font = 'bold 32px Courier New';
+        function drawText(line1, line2) {
+            ctx.fillStyle = '#0f0';
+            ctx.font = 'bold 40px Courier New';
             ctx.textAlign = 'center';
-            ctx.fillText(l1, canvas.width/2, canvas.height/2 - 15);
-            ctx.fillText(l2, canvas.width/2, canvas.height/2 + 25);
+            ctx.fillText(line1, canvas.width/2, canvas.height/2 - 20);
+            ctx.fillText(line2, canvas.width/2, canvas.height/2 + 30);
         }
 
         function updateOverlay() {
             if ('mediaSession' in navigator) {
-                let t = `Score: ${score}`, a = `Best: ${highScore}`;
-                if (gameState === 'MENU') { t = "Snake: WMCE"; a = "Prev/Next to Start"; }
-                else if (gameState === 'GAMEOVER') { t = "GAME OVER"; a = `Final: ${score}`; }
+                let titleText = `Score: ${score}`;
+                let artistText = `High Score: ${highScore}`;
+
+                if (gameState === 'MENU') {
+                    titleText = "System Snake Ultimate";
+                    artistText = "Press Prev/Next Track to START...";
+                } else if (gameState === 'GAMEOVER') {
+                    titleText = "GAME OVER";
+                    artistText = `Final: ${score} | Best: ${highScore}`;
+                }
 
                 navigator.mediaSession.metadata = new MediaMetadata({
-                    title: t, artist: a,
+                    title: titleText,
+                    artist: artistText,
                     artwork: [{ src: canvas.toDataURL('image/png'), sizes: '256x256', type: 'image/png' }]
                 });
             }
         }
 
-        function gameLoop() { update(); draw(); setTimeout(() => requestAnimationFrame(gameLoop), gameSpeed); }
-        setInterval(updateOverlay, 150);
+        // --- 4. LOOPS ---
+
+        function gameLoop() {
+            update();
+            draw();
+            setTimeout(() => requestAnimationFrame(gameLoop), gameSpeed); 
+        }
+
+        setInterval(updateOverlay, 50);
 
         startBtn.onclick = () => {
-            silentAudio.play().then(() => {
-                setDifficulty();
-                if ('mediaSession' in navigator) {
-                    navigator.mediaSession.setActionHandler('previoustrack', () => handleInput('left'));
-                    navigator.mediaSession.setActionHandler('nexttrack', () => handleInput('right'));
-                    navigator.mediaSession.setActionHandler('play', () => { cycleBackgroundColor(); silentAudio.play(); });
-                    navigator.mediaSession.setActionHandler('pause', () => { cycleBackgroundColor(); silentAudio.play(); });
-                }
-                gameLoop();
-                startBtn.textContent = "LINK ACTIVE - OPEN WIN+A";
-                startBtn.disabled = true;
-            }).catch(err => {
-                alert("Please interact with the page first to allow audio playback.");
-            });
+            setDifficulty();
+            
+            music.play();
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.setActionHandler('previoustrack', () => handleInput('left'));
+                navigator.mediaSession.setActionHandler('nexttrack', () => handleInput('right'));
+                
+                // Use Play/Pause buttons to cycle background color
+                // We also force music.play() so the audio doesn't actually stop
+                navigator.mediaSession.setActionHandler('play', () => {
+                    cycleBackgroundColor();
+                    music.play();
+                });
+                navigator.mediaSession.setActionHandler('pause', () => {
+                    cycleBackgroundColor();
+                    music.play();
+                });
+            }
+            gameLoop();
+            startBtn.textContent = "LINK ACTIVE - OPEN WIN+A";
+            startBtn.disabled = true;
         };
     </script>
 </body>
