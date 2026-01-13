@@ -154,8 +154,8 @@
         let gameOverTime = 0; // Timestamp for death
         
         // Settings, initialized to default casual settings
-        let tileCount = 16; 
-        let gridSize = 16;
+        let tileCount = 8; 
+        let gridSize = 32;
         let scoreMultiplier = 1;
         let bgGrayValue = 0; // 0-255
         let gameSpeed = 1000 / 6;
@@ -195,10 +195,12 @@
         function setDifficulty() {
             const level = difficultySelect.value;
             if (level === 'casual') { // coarser grid, slower game speed
+                score = 3;
                 tileCount = 8;
                 scoreMultiplier = 1;
                 gameSpeed = 1000 / 6;
             } else if (level === 'gamer') { // finer grid, faster game speed
+                score = 6;
                 tileCount = 16;
                 scoreMultiplier = 2;
                 gameSpeed = 1000 / 8;
@@ -415,6 +417,7 @@
     </script>
 </body>
 </html>
+
 
 
 
